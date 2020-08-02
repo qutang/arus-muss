@@ -16,8 +16,10 @@ def test_feature_vector(dw_data, da_data):
     placements = ['DW', 'DA']
     srs = [dw_sr, da_sr]
 
-    fv_df, fv_names = compute_fv(
+    fv_df = compute_fv(
         *raw_dfs, st=None, et=None, srs=srs, placements=placements)
+
+    fv_names = fv_df.columns[3:].values.tolist()
 
     feature_names = arus.fv.inertial.assemble_fv_names(
         selected=FEATURE_NAMES, use_vm=True, num_of_axes=3)

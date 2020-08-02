@@ -1,21 +1,22 @@
 [tool.poetry]
 name = "arus-muss"
 version = "0.1.0"
-description = "Package for MUSS activity recognition algorithm see doi: 10.1249/MSS.0000000000002306"
+description = "Package for MUSS activity recognition algorithm (see doi: 10.1249/MSS.0000000000002306 for the description of the algorithm)."
 authors = ["Qu Tang <tang.q@northeastern.edu>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.7"
-arus = {path = "../.."}
+arus = "^1.1.12"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.0.1"
 autopep8 = "^1.5.3"
 
+[tool.poetry.scripts]
+arus-muss = 'arus_muss.cli:cli'
+
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
 
-[tool.poetry.scripts]
-arus-muss = 'arus_muss.cli:cli'
