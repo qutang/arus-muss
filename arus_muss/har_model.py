@@ -223,15 +223,12 @@ class MUSSHARModel(arus.models.HARModel):
     def predict(self, *input_objs, **kwargs):
         result = None
         if type(input_objs[0]) is arus.ds.SensorObj:
-            if 'sr' in kwargs:
-                result = self._predict_sensor(*input_objs, sr=kwargs['sr'])
-            else:
-                result = self._predict_sensor(*input_objs)
+            result = self._predict_sensor(*input_objs)
         elif type(input_objs[0]) is arus.ds.SubjectObj:
             result = self._predict_subj(*input_objs)
         elif type(input_objs[0]) is pd.DataFrame and len(input_objs) == 1 and 'fs_names' in kwargs:
             result = self._predict_fs(input_objs[0], kwargs['fs_names'])
-        elif type(input_objs[0]) is pd.DataFrame and 'placements' in kwargs and ('sr' in kwargs or 'srs' in kwargs):
+        elif type(input_objs[0]) is pd.DataFrame and 'placements' in kwargs and 'srs' in kwargs:
             result = self._predict_raw_dfs(*input_objs, **kwargs)
         elif type(input_objs[0]) is str and 'placements' in kwargs:
             result = self._predict_raw_files(input_objs, **kwargs)
