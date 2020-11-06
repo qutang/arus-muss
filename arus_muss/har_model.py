@@ -26,6 +26,7 @@ class MUSSHARModel(arus.models.HARModel):
     step_size: float = None
     sr: int = 80
     used_placements: typing.List[str] = field(default_factory=lambda: ['DW'])
+    data_set: arus.ds.MHDataset = None
 
     def reset_model(self):
         self.model = None
@@ -45,30 +46,27 @@ class MUSSHARModel(arus.models.HARModel):
             subj.sensors = sensors
         self.data_set = data_set
 
-    def compute_features(self, pids=None):
-        if pids is None:
+    def compute_features(self, pids='ALL', n_cores=4):
+        if pids == 'ALL':
             pids = self.data_set.get_pids()
+
+        # subjs = [self.data_set.get_subject_obj(pid) for pid in pids]
+
+        results = joblib.Parallel(
+            n_jobs=n_cores, backend='loky',
+            verbose=50, max_nbytes=None)(
+            joblib.delayed(self._compute_features_inner)(pid) for pid in pids
+        )
+        self._store_fs(results, pids)
+
+    def _compute_features_inner(self, pid):
+        subj = self.data_set.get_subject_obj(pid)
+        start_time, stop_time = self.data_set.get_session_span(pid)
+        return self._compute_features_per_subj(
+            subj, self.data_set.input_type, st=start_time, et=stop_time)
+
+    def _store_fs(self, results, pids):
         fss = []
-        sch = arus.Scheduler(mode=arus.Scheduler.Mode.PROCESS,
-                             scheme=arus.Scheduler.Scheme.SUBMIT_ORDER)
-        sch.reset()
-        for pid in pids:
-            subj = self.data_set.get_subject_obj(pid)
-
-            logger.info(f'Computing features for {pid}')
-            start_time, stop_time = self.data_set.get_session_span(pid)
-
-            sch.submit(
-                self._compute_features_per_subj,
-                subject=subj,
-                input_type=self.data_set.input_type,
-                st=start_time,
-                et=stop_time
-            )
-            gc.collect()
-
-        results = sch.get_all_remaining_results()
-
         for subj_fs, pid in zip(results, pids):
             subj = self.data_set.get_subject_obj(pid)
             if subj_fs is not None:
@@ -90,31 +88,45 @@ class MUSSHARModel(arus.models.HARModel):
         else:
             logger.warning('No feature set is computed.')
 
-    def compute_class_set(self, task_names, pids=None):
-        if pids is None:
+    def compute_class_set(self, task_names, pids='ALL', n_cores=4):
+        if pids == 'ALL':
             pids = self.data_set.get_pids()
+
+        subjs = [self.data_set.get_subject_obj(pid) for pid in pids]
+
+        results = joblib.Parallel(
+            n_jobs=n_cores, backend='loky',
+            verbose=50, max_nbytes=None)(
+            joblib.delayed(self._compute_class_set_inner)(subj, task_names) for subj in subjs
+        )
+
+        self._store_cs(results, pids)
+
+    def _compute_class_set_inner(self, subj, task_names):
+        start_time, stop_time = self.data_set.get_session_span(subj.pid)
+        return self.data_set.get_class_set(
+            pid=subj.pid, task_names=task_names, window_size=self.window_size,
+            step_size=self.step_size, start_time=start_time, stop_time=stop_time, show_progress=False)
+
+    def _store_cs(self, results, pids):
         css = []
-        for pid in pids:
+        for subj_cs, pid in zip(results, pids):
             subj = self.data_set.get_subject_obj(pid)
-            logger.info(f'Compute class set for {pid}')
-            start_time, stop_time = self.data_set.get_session_span(pid)
-
-            subj_class_set = self.data_set.get_class_set(
-                subj.pid, task_names=task_names, window_size=self.window_size, step_size=self.step_size, start_time=start_time, stop_time=stop_time)
-
-            if subj_class_set is not None:
+            if subj_cs is not None:
+                subj_cs_names = subj_cs.columns[3:]
                 subj.processed = {**subj.processed,
-                                  'cs': subj_class_set, 'cs_names': task_names}
-                cs = subj_class_set.copy()
+                                  'cs': subj_cs, 'cs_names': subj_cs_names}
+                cs = subj_cs.copy()
                 cs['PID'] = pid
                 css.append(cs)
+                cs_names = subj_cs_names
             else:
                 logger.warning(
                     f'Subject {pid} failed to compute class set, this may due to the annotation data is out of range, incorrect annotation data, or invalid annotation data values. Ignore it from the class set.')
         if len(css) > 0:
             cs = pd.concat(css, axis=0, ignore_index=True, sort=False)
             self.data_set.processed = {
-                **self.data_set.processed, 'cs': cs, 'cs_names': task_names}
+                **self.data_set.processed, 'cs': cs, 'cs_names': cs_names}
         else:
             logger.warning('No class set is computed.')
 
@@ -136,8 +148,8 @@ class MUSSHARModel(arus.models.HARModel):
     def get_training_acc(self):
         return self.train_perf['acc']
 
-    def train(self, task_name, ignore_classes=["Unknown", "Transition"], pids=None, verbose=False, **kwargs):
-        if pids is None:
+    def train(self, task_name, ignore_classes=["Unknown", "Transition"], pids='ALL', verbose=False, **kwargs):
+        if pids == 'ALL':
             pid_info = 'all participants'
         else:
             pid_info = ','.join(pids)
@@ -198,15 +210,15 @@ class MUSSHARModel(arus.models.HARModel):
         }
         joblib.dump(bundle, filename=output_filepath)
 
-    @staticmethod
+    @ staticmethod
     def build_model_filename(name, placements, pids, target, dataset_name):
-        if pids is None:
+        if pids == 'ALL' or pids is None:
             pid_info = 'ALL'
         else:
             pid_info = '_'.join(pids)
         return f'{name}-{target}-{pid_info}-{"_".join(placements)}-{dataset_name}.har'
 
-    @staticmethod
+    @ staticmethod
     def load_model(path):
         bundle = joblib.load(path)
         model = MUSSHARModel(
@@ -237,12 +249,12 @@ class MUSSHARModel(arus.models.HARModel):
                 f'Unrecognized input type {type(input_objs[0])} for predict function.')
         return result
 
-    def cross_validation(self, task_name, pids=None, n_fold=5, **kwargs):
-        if pids is None:
+    def cross_validation(self, task_name, pids='ALL', n_fold=5, **kwargs):
+        if pids == 'ALL':
             pids = self.data_set.get_pids()
         fcs, fs_names, fc_names = self._preprocess_feature_class_set(pids=pids)
         fcs = self.ignore_classes(fcs, task_name=task_name, remove_classes=[
-                                  'Unknown', 'Transition', 'Transition-Left', 'Transition-Right', 'Transition-Both', 'Unknown-Left', 'Unknown-Right', 'Unknown-Both'])
+            'Unknown', 'Transition', 'Transition-Left', 'Transition-Right', 'Transition-Both', 'Unknown-Left', 'Unknown-Right', 'Unknown-Both'])
         fcs.reset_index(drop=True, inplace=True)
         splitter = TimeSeriesEpisodeSplit(
             fcs, fs_names, task_name, n_split=n_fold)
@@ -269,12 +281,13 @@ class MUSSHARModel(arus.models.HARModel):
         }
         return cv_df, cm_df
 
-    def logo_validation(self, task_name, pids=None, group_col=None, random_state=None, **kwargs):
-        if pids is None:
+    def logo_validation(self, task_name, pids='ALL', group_col=None, random_state=None, **kwargs):
+        self.train_target = task_name
+        if pids == 'ALL':
             pids = self.data_set.get_pids()
         fcs, fs_names, fc_names = self._preprocess_feature_class_set(pids=pids)
         fcs = self.ignore_classes(fcs, task_name=task_name, remove_classes=[
-                                  'Unknown', 'Transition', 'Transition-Left', 'Transition-Right', 'Transition-Both', 'Unknown-Left', 'Unknown-Right', 'Unknown-Both'])
+            'Unknown', 'Transition'])
         fcs.reset_index(drop=True, inplace=True)
 
         n_splits = len(fcs[group_col].unique())
@@ -305,12 +318,12 @@ class MUSSHARModel(arus.models.HARModel):
         }
         return
 
-    def learning_curve_logo(self, task_name, pids=None, group_col=None, random_state=None, n_steps=10, **kwargs):
-        if pids is None:
+    def learning_curve_logo(self, task_name, pids='ALL', group_col=None, random_state=None, n_steps=10, **kwargs):
+        if pids == 'ALL':
             pids = self.data_set.get_pids()
         fcs, fs_names, fc_names = self._preprocess_feature_class_set(pids=pids)
         fcs = self.ignore_classes(fcs, task_name=task_name, remove_classes=[
-                                  'Unknown', 'Transition', 'Transition-Left', 'Transition-Right', 'Transition-Both', 'Unknown-Left', 'Unknown-Right', 'Unknown-Both'])
+            'Unknown', 'Transition', 'Transition-Left', 'Transition-Right', 'Transition-Both', 'Unknown-Left', 'Unknown-Right', 'Unknown-Both'])
         fcs.reset_index(drop=True, inplace=True)
 
         n_splits = len(fcs[group_col].unique())
@@ -407,9 +420,9 @@ class MUSSHARModel(arus.models.HARModel):
         })
         return predict_df
 
-    def _preprocess_feature_class_set(self, pids=None):
+    def _preprocess_feature_class_set(self, pids='ALL'):
         if 'fs' in self.data_set.processed:
-            if pids is not None:
+            if pids != 'ALL':
                 fss = []
                 for pid in pids:
                     fs = self.data_set.get_subject_obj(pid).processed['fs']
@@ -426,7 +439,7 @@ class MUSSHARModel(arus.models.HARModel):
                 'No feature set available, please run compute_features at first.')
             return
         if 'cs' in self.data_set.processed:
-            if pids is not None:
+            if pids != 'ALL':
                 css = []
                 for pid in pids:
                     cs = self.data_set.get_subject_obj(pid).processed['cs']
