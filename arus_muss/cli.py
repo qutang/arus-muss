@@ -1,7 +1,7 @@
 """arus-muss command line application
 
 Usage:
-  arus-muss update -p=<places> -t=<target> [--pids=<pids>] [-d]
+  arus-muss update -p=<places> -t=<target> [--pids=<pids>] [-c=<cores>] [-d]
   arus-muss predict (-m=<model> | -t=<target>) -p=<places> -f=<format> -o=<output> [-s=<srs>] [--pids=<pids>] [-d] FILE_PATH...
 
 Arguments:
@@ -12,8 +12,10 @@ Options:
   -p <places>, --placements <places>      Set placements. E.g., "DW,DA".
   -t <target>, --target <target>          Set target task name. E.g."INTENSITY".
   -m <model>, --model <model>             Set model path.
-  -f <format>, --format <format>          Set input file format.
+  -f <format>, --format <format>          Set input file format. E.g. "MHEALTH_FORMAT" or "SIGNALIGNER".
+  -c <cores>, --cores <cores>             Set the number of cores used. E.g., 4.
   -o <output>, --output <output>          Set output folder.
+  --pids <pids>                           Set the participant IDs. E.g., "ALL" or "SPADES_1,SPADES_2".
   -d, --debug                             Turn on debug messages.
 """
 import sys
@@ -30,7 +32,7 @@ import arus
 from .har_model import MUSSHARModel
 
 CACHE_DIR = os.path.join(arus.env.get_cache_home(), 'muss')
-memory = Memory(cachedir=CACHE_DIR, verbose=0)
+memory = Memory(location=CACHE_DIR, verbose=0)
 BUILTIN_DIR = pkg_resources.resource_filename('arus_muss', 'models')
 
 
@@ -46,8 +48,8 @@ def cli():
     logger.debug(arguments)
 
     if arguments['update']:
-        target, placements, pids = _parse_for_update(arguments)
-        model = update_builtin_model(target, placements, pids)
+        target, placements, pids, n_cores = _parse_for_update(arguments)
+        model = update_builtin_model(target, placements, pids, n_cores)
         model.save_model(save_raw=False, save_fcs=False,
                          output_folder=BUILTIN_DIR)
     elif arguments['predict']:
@@ -64,16 +66,17 @@ def cli():
 def _parse_options(option, as_number=False):
     result = option.split(',')
     if as_number:
-        result = [float(result) for item in result]
+        result = [float(item) for item in result]
     return result
 
 
 def _parse_for_update(arguments):
     placements = _parse_options(arguments['--placements'])
-    pids = None if arguments['--pids'] is None else _parse_options(
+    pids = 'ALL' if arguments['--pids'] == 'ALL' or arguments['--pids'] is None else _parse_options(
         arguments['--pids'])
     target = arguments['--target']
-    return target, placements, pids
+    n_cores = int(arguments['--cores'])
+    return target, placements, pids, n_cores
 
 
 def _parse_for_predict(arguments):
@@ -87,15 +90,20 @@ def _parse_for_predict(arguments):
     pids = None if arguments['--pids'] is None else _parse_options(
         arguments['--pids'])
     output_folder = arguments['--output']
-    model_path = model_path or os.path.join(BUILTIN_DIR, MUSSHARModel.build_model_filename(
-        MUSSHARModel.name, placements=placements, pids=pids, target=target, dataset_name='SPADES_LAB'))
+    model_path = _get_model_path(
+        placements=placements, pids=pids, target=target, model_path=model_path)
     output_path = os.path.join(output_folder, os.path.basename(
         model_path).replace('.har', '.prediction.csv'))
-    return model_path, test_files, placements, srs, output_path
+    return model_path, test_files, placements, srs, file_format, output_path
 
 
-@ memory.cache
-def update_builtin_model(target, placements, pids=None):
+def _get_model_path(placements=None, pids='ALL', target=None, model_path=None):
+    model_path = model_path or os.path.join(BUILTIN_DIR, MUSSHARModel.build_model_filename(
+        MUSSHARModel.name, placements=placements, pids=pids, target=target, dataset_name='SPADES_LAB'))
+    return model_path
+
+
+def update_builtin_model(target, placements, pids='ALL', n_cores=4):
     spades_lab = arus.ds.MHDataset(
         path=arus.ds.get_dataset_path('spades_lab'),
         name='spades_lab', input_type=arus.ds.InputType.MHEALTH_FORMAT)
@@ -108,9 +116,9 @@ def update_builtin_model(target, placements, pids=None):
 
     model.load_dataset(spades_lab)
 
-    model.compute_features()
+    model.compute_features(pids=pids, n_cores=n_cores)
     model.compute_class_set(
-        task_names=[target])
+        task_names=[target], pids=pids, n_cores=n_cores)
 
     model.train(task_name=target, pids=pids, verbose=True)
     return model
