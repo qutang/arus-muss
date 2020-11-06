@@ -31,4 +31,4 @@ def test_feature_vector(dw_data, da_data):
     np.testing.assert_array_equal(fv_names, true_fv_names)
 
     assert fv_df.shape[0] == 1
-    assert np.sum(fv_df.notna().values) == fv_df.shape[1] - 3
+    assert np.sum(fv_df.notna().values) == fv_df.shape[1]
