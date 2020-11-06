@@ -4,7 +4,7 @@ description = "Activity Recognition with Ubiquitous Sensing"
 name = "arus"
 optional = false
 python-versions = ">=3.7.0,<4.0.0"
-version = "1.1.17"
+version = "1.1.18"
 
 [package.dependencies]
 docopt = ">=0.6.2,<0.7.0"
@@ -535,14 +535,14 @@ docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["pytest (>=3.5,<3.7.3 || >3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pytest-cov", "jaraco.test (>=3.2.0)", "jaraco.itertools", "func-timeout", "pytest-black (>=0.3.7)", "pytest-mypy"]
 
 [metadata]
-content-hash = "6ea1a3dbeda39677cc7b6d35a3354ed69bc062e4cf9e3f64a2289a769b1f0a40"
+content-hash = "8c4fc105f7100a0c3f1bf8fb44ae3d1e57420f17e03710063ee9d00021192a7d"
 lock-version = "1.0"
 python-versions = "^3.7"
 
 [metadata.files]
 arus = [
-    {file = "arus-1.1.17-py3-none-any.whl", hash = "sha256:844ffe5111e3ccbfe6019b7890d111c549a246a7b226bb601810ced13f7bb03f"},
-    {file = "arus-1.1.17.tar.gz", hash = "sha256:a1e1306e84bb1de9f576aa1ce04317188223d56c4e31603ea5e26b6742ade4f0"},
+    {file = "arus-1.1.18-py3-none-any.whl", hash = "sha256:944498778b460680f8302a40d7ce1dc9e9981f902972e18d882e0de2c6e98ba5"},
+    {file = "arus-1.1.18.tar.gz", hash = "sha256:a4d345b6fadfe7179ee8b10ec2d8e74ed32d696ac76fa4fc078410cd7ce968db"},
 ]
 atomicwrites = [
     {file = "atomicwrites-1.4.0-py2.py3-none-any.whl", hash = "sha256:6d1784dea7c0c8d4a5172b6c620f40b6e4cbfdf96d783691f2e1302a7b88e197"},
